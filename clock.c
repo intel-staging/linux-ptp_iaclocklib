@@ -248,7 +248,8 @@ static void clock_update_subscription(struct clock *c, struct ptp_message *req,
 				s->addr = req->address;
 				memcpy(s->events, bitmask, EVENT_BITMASK_CNT);
 				clock_gettime(CLOCK_MONOTONIC, &now);
-				s->expiration = now.tv_sec + duration;
+				s->expiration = duration != 0 ?
+				  now.tv_sec + duration : 0;
 			} else {
 				remove_subscriber(s);
 			}
@@ -267,7 +268,7 @@ static void clock_update_subscription(struct clock *c, struct ptp_message *req,
 	s->addr = req->address;
 	memcpy(s->events, bitmask, EVENT_BITMASK_CNT);
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	s->expiration = now.tv_sec + duration;
+	s->expiration = duration != 0 ? now.tv_sec + duration : 0;
 	s->sequenceId = 0;
 	LIST_INSERT_HEAD(&c->subscribers, s, list);
 }
@@ -311,7 +312,7 @@ static void clock_prune_subscriptions(struct clock *c)
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	LIST_FOREACH_SAFE(s, &c->subscribers, list, tmp) {
-		if (s->expiration <= now.tv_sec) {
+		if (s->expiration != 0 && s->expiration <= now.tv_sec) {
 			pr_info("subscriber %s timed out",
 				pid2str(&s->targetPortIdentity));
 			remove_subscriber(s);
