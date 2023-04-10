@@ -748,12 +748,18 @@ capable:
 	if (p->asCapable == NOT_CAPABLE) {
 		pr_debug("%s: setting asCapable", p->log_name);
 		p->asCapable = AS_CAPABLE;
+		port_notify_event(p, NOTIFY_PORT_STATE);
+		port_notify_event(p, NOTIFY_PORT_STATE_NP);
 	}
 	return 1;
 
 not_capable:
 	if (p->asCapable)
 		port_nrate_initialize(p);
+	if (p->asCapable != NOT_CAPABLE) {
+		port_notify_event(p, NOTIFY_PORT_STATE);
+		port_notify_event(p, NOTIFY_PORT_STATE_NP);
+	}
 	p->asCapable = NOT_CAPABLE;
 	return 0;
 }
@@ -3254,6 +3260,9 @@ void port_notify_event(struct port *p, enum notification event)
 	switch (event) {
 	case NOTIFY_PORT_STATE:
 		id = MID_PORT_DATA_SET;
+		break;
+	case NOTIFY_PORT_STATE_NP:
+		id = MID_PORT_DATA_SET_NP;
 		break;
 	default:
 		return;
