@@ -756,14 +756,20 @@ capable:
 		pr_debug("%s: setting asCapable", p->log_name);
 		p->asCapable = AS_CAPABLE;
 		port_notify_event(p, NOTIFY_CMLDS);
+		port_notify_event(p, NOTIFY_PORT_STATE);
+		port_notify_event(p, NOTIFY_PORT_STATE_NP);
 	}
 	return 1;
 
 not_capable:
 	if (p->asCapable)
 		port_nrate_initialize(p);
-	p->asCapable = NOT_CAPABLE;
-	port_notify_event(p, NOTIFY_CMLDS);
+	if (p->asCapable != NOT_CAPABLE) {
+		p->asCapable = NOT_CAPABLE;
+		port_notify_event(p, NOTIFY_CMLDS);
+		port_notify_event(p, NOTIFY_PORT_STATE);
+		port_notify_event(p, NOTIFY_PORT_STATE_NP);
+	}
 	return 0;
 }
 
@@ -3437,6 +3443,9 @@ void port_notify_event(struct port *p, enum notification event)
 		break;
 	case NOTIFY_CMLDS:
 		id = MID_CMLDS_INFO_NP;
+		break;
+	case NOTIFY_PORT_STATE_NP:
+		id = MID_PORT_DATA_SET_NP;
 		break;
 	default:
 		return;

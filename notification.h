@@ -46,6 +46,7 @@ enum notification {
 	NOTIFY_TIME_SYNC,
 	NOTIFY_PARENT_DATA_SET,
 	NOTIFY_CMLDS,
+	NOTIFY_PORT_STATE_NP,
 };
 
 #endif
