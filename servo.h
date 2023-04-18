@@ -42,7 +42,7 @@ enum servo_type {
  * Defines the caller visible states of a clock servo.
  */
 enum servo_state {
-
+	SERVO_INVALID = -1,
 	/**
 	 * The servo is not yet ready to track the master clock.
 	 */
@@ -64,7 +64,11 @@ enum servo_state {
 	 * of the estimated threshold are less than servo_offset_threshold.
 	 */
 	SERVO_LOCKED_STABLE,
+	SERVO_LAST,
 };
+
+static const char *const servo_state_string[SERVO_LAST+1] =
+	{"unlocked", "jump", "locked", "locked (stable)", "unknown error"};
 
 /**
  * Create a new instance of a clock servo.
@@ -137,4 +141,10 @@ void servo_leap(struct servo *servo, int leap);
  */
 int servo_offset_threshold(struct servo *servo);
 
+/**
+ * Get the string representing a servo state
+ * @param servo_state	servo state
+ * @return		String representing servo state
+ */
+const char *servo_state_str(enum servo_state servo_state);
 #endif
