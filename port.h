@@ -34,6 +34,7 @@ struct clock;
 
 /** Opaque type. */
 struct port;
+struct clock_subscriber;
 
 /** The port identity that matches any port. */
 extern const struct PortIdentity wildcard_pid;
@@ -199,8 +200,9 @@ struct ptp_message *port_management_notify(struct PortIdentity pid,
  * occured on the port.
  * @param p        The port.
  * @param event    The identification of the event.
+ * @param s        If non-NULL, specify a single subscriber, otherwise send to all.
  */
-void port_notify_event(struct port *p, enum notification event);
+void port_notify_event(struct port *p, enum notification event, struct clock_subscriber *s);
 
 /**
  * Open a network port.

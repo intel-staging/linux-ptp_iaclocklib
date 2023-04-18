@@ -483,6 +483,7 @@ static void ts2phc_synchronize_clocks(struct ts2phc_private *priv, int autocfg)
 			c->name, offset, c->servo_state, adj);
 
 		switch (c->servo_state) {
+		default:
 		case SERVO_UNLOCKED:
 			break;
 		case SERVO_JUMP:

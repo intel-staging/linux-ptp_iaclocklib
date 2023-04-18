@@ -24,6 +24,7 @@
 
 #include "ddt.h"
 #include "ds.h"
+#include "servo.h"
 
 /* TLV types */
 #define TLV_MANAGEMENT					0x0001
@@ -392,6 +393,7 @@ struct time_status_np {
 	ScaledNs      lastGmPhaseChange;
 	Integer32     gmPresent;
 	struct ClockIdentity gmIdentity;
+	Enumeration8 servo_state;
 } PACKED;
 
 struct grandmaster_settings_np {

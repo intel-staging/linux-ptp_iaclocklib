@@ -231,6 +231,7 @@ static void clock_update_subscription(struct clock *c, struct ptp_message *req,
 	struct clock_subscriber *s, *tmp;
 	struct timespec now;
 	int i, remove = 1;
+	struct port *p;
 
 	for (i = 0; i < EVENT_BITMASK_CNT; i++) {
 		if (bitmask[i]) {
@@ -270,6 +271,14 @@ static void clock_update_subscription(struct clock *c, struct ptp_message *req,
 	s->expiration = duration != 0 ? now.tv_sec + duration : 0;
 	s->sequenceId = 0;
 	LIST_INSERT_HEAD(&c->subscribers, s, list);
+
+	/* Synchronously dump all subscription data when a subscription is modified,
+	 * sending only to the subscriber
+	 */
+	LIST_FOREACH(p, &c->ports, list) {
+		port_notify_event(p, NOTIFY_ALL, s);
+	}
+	clock_notify_event(c, NOTIFY_ALL, s);
 }
 
 static void clock_get_subscription(struct clock *c, struct ptp_message *req,
@@ -319,25 +328,32 @@ static void clock_prune_subscriptions(struct clock *c)
 	}
 }
 
+static void clock_send_one_notification(struct clock_subscriber *s, enum notification event,
+					struct ptp_message *msg, struct port *uds)
+{
+	if (!event_bitmask_get(s->events, event))
+		return;
+	/* send event */
+	msg->header.sequenceId = htons(s->sequenceId);
+	s->sequenceId++;
+	msg->management.targetPortIdentity.clockIdentity =
+		s->targetPortIdentity.clockIdentity;
+	msg->management.targetPortIdentity.portNumber =
+		htons(s->targetPortIdentity.portNumber);
+	msg->address = s->addr;
+	port_forward_to(uds, msg);
+}
+
 void clock_send_notification(struct clock *c, struct ptp_message *msg,
-			     enum notification event)
+			     enum notification event, struct clock_subscriber *s)
 {
 	struct port *uds = c->uds_rw_port;
-	struct clock_subscriber *s;
 
-	LIST_FOREACH(s, &c->subscribers, list) {
-		if (!event_bitmask_get(s->events, event))
-			continue;
-		/* send event */
-		msg->header.sequenceId = htons(s->sequenceId);
-		s->sequenceId++;
-		msg->management.targetPortIdentity.clockIdentity =
-			s->targetPortIdentity.clockIdentity;
-		msg->management.targetPortIdentity.portNumber =
-			htons(s->targetPortIdentity.portNumber);
-		msg->address = s->addr;
-		port_forward_to(uds, msg);
-	}
+	if (s != NULL)
+		clock_send_one_notification(s, event, msg, uds);
+	else
+		LIST_FOREACH(s, &c->subscribers, list)
+			clock_send_one_notification(s, event, msg, uds);
 }
 
 void clock_destroy(struct clock *c)
@@ -552,6 +568,7 @@ static int clock_management_fill_response(struct clock *c, struct port *p,
 		else
 			tsn->gmPresent = 1;
 		tsn->gmIdentity = c->dad.pds.grandmasterIdentity;
+		tsn->servo_state = c->servo_state;
 		datalen = sizeof(*tsn);
 		break;
 	case MID_GRANDMASTER_SETTINGS_NP:
@@ -843,7 +860,7 @@ static void clock_update_grandmaster(struct clock *c)
 	c->tds.timeSource                       = c->time_source;
 
 	if (clock_compare_pds(&old_pds, pds))
-		clock_notify_event(c, NOTIFY_PARENT_DATA_SET);
+		clock_notify_event(c, NOTIFY_PARENT_DATA_SET, NULL);
 }
 
 static void clock_update_slave(struct clock *c)
@@ -874,7 +891,7 @@ static void clock_update_slave(struct clock *c)
 	clock_update_time_properties(c, tds);
 
 	if (clock_compare_pds(&old_pds, pds))
-		clock_notify_event(c, NOTIFY_PARENT_DATA_SET);
+		clock_notify_event(c, NOTIFY_PARENT_DATA_SET, NULL);
 }
 
 static int clock_utc_correct(struct clock *c, tmv_t ingress)
@@ -1729,11 +1746,13 @@ int clock_manage(struct clock *c, struct port *p, struct ptp_message *msg)
 	return changed;
 }
 
-void clock_notify_event(struct clock *c, enum notification event)
+void clock_notify_event(struct clock *c, enum notification event,
+			struct clock_subscriber *s)
 {
 	struct port *uds = c->uds_rw_port;
 	struct PortIdentity pid;
 	struct ptp_message *msg;
+	enum notification i;
 	int id;
 
 	/* A notification may come before UDS is created */
@@ -1743,6 +1762,11 @@ void clock_notify_event(struct clock *c, enum notification event)
 	pid = port_identity(uds);
 
 	switch (event) {
+	case NOTIFY_ALL:
+		for(i = NOTIFY_ZERO + 1; i < NOTIFY_ALL; ++i) {
+			clock_notify_event(c, i, s);
+		}
+		break;
 	case NOTIFY_TIME_SYNC:
 		id = MID_TIME_STATUS_NP;
 		break;
@@ -1761,7 +1785,7 @@ void clock_notify_event(struct clock *c, enum notification event)
 		goto err;
 	if (msg_pre_send(msg))
 		goto err;
-	clock_send_notification(c, msg, event);
+	clock_send_notification(c, msg, event, s);
 err:
 	msg_put(msg);
 }
@@ -1997,6 +2021,11 @@ enum servo_state clock_synchronize(struct clock *c, tmv_t ingress, tmv_t origin)
 	double adj, weight;
 	int64_t offset;
 
+	if(tmv_cmp(ingress, tmv_zero()) == 0) {
+		c->ingress_ts = tmv_zero();
+		goto clock_notify;
+	}
+
 	if (c->step_window_counter) {
 		c->step_window_counter--;
 		pr_debug("skip sync after jump %d/%d",
@@ -2025,7 +2054,7 @@ enum servo_state clock_synchronize(struct clock *c, tmv_t ingress, tmv_t origin)
 
 	if (c->free_running) {
 		state = clock_no_adjust(c, ingress, origin);
-		clock_notify_event(c, NOTIFY_TIME_SYNC);
+		clock_notify_event(c, NOTIFY_TIME_SYNC, NULL);
 		return state;
 	}
 
@@ -2037,6 +2066,7 @@ enum servo_state clock_synchronize(struct clock *c, tmv_t ingress, tmv_t origin)
 	tsproc_set_clock_rate_ratio(c->tsproc, clock_rate_ratio(c));
 
 	switch (state) {
+	default:
 	case SERVO_UNLOCKED:
 		break;
 	case SERVO_JUMP:
@@ -2083,7 +2113,8 @@ enum servo_state clock_synchronize(struct clock *c, tmv_t ingress, tmv_t origin)
 			tmv_to_nanoseconds(c->path_delay));
 	}
 
-	clock_notify_event(c, NOTIFY_TIME_SYNC);
+ clock_notify:
+	clock_notify_event(c, NOTIFY_TIME_SYNC, NULL);
 
 	return state;
 
