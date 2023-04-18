@@ -34,6 +34,7 @@ struct ptp_message; /*forward declaration*/
 
 /** Opaque type. */
 struct clock;
+struct clock_subscriber;
 
 enum clock_type {
 	CLOCK_TYPE_ORDINARY   = 0x8000,
@@ -201,9 +202,10 @@ int clock_manage(struct clock *c, struct port *p, struct ptp_message *msg);
  * @param c      The clock instance.
  * @param msg    The PTP message to send, in network byte order.
  * @param event  The event that occured.
+ * @param s      If non-NULL, send to a single suscriber, otherwise send to all.
  */
 void clock_send_notification(struct clock *c, struct ptp_message *msg,
-			     enum notification event);
+			     enum notification event, struct clock_subscriber *s);
 
 /**
  * Construct and send notification to subscribers about an event that
@@ -211,7 +213,7 @@ void clock_send_notification(struct clock *c, struct ptp_message *msg,
  * @param c      The clock instance.
  * @param event  The identification of the event.
  */
-void clock_notify_event(struct clock *c, enum notification event);
+void clock_notify_event(struct clock *c, enum notification event, struct clock_subscriber *s);
 
 /**
  * Obtain a clock's parent data set.

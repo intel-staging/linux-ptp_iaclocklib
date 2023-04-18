@@ -124,6 +124,7 @@ double servo_sample(struct servo *servo,
 	r = servo->sample(servo, offset, local_ts, weight, state);
 
 	switch (*state) {
+	default:
 	case SERVO_UNLOCKED:
 		servo->curr_offset_values = servo->num_offset_values;
 		break;

@@ -31,6 +31,7 @@
 #include "notification.h"
 #include "pmc_common.h"
 #include "print.h"
+#include "servo.h"
 #include "tlv.h"
 #include "uds.h"
 #include "util.h"
@@ -408,7 +409,8 @@ static void pmc_show(struct ptp_message *msg, FILE *fp)
 			IFMT "gmTimeBaseIndicator        %hu"
 			IFMT "lastGmPhaseChange          0x%04hx'%016" PRIx64 ".%04hx"
 			IFMT "gmPresent                  %s"
-			IFMT "gmIdentity                 %s",
+			IFMT "gmIdentity                 %s"
+			IFMT "Servo state                %s",
 			tsn->master_offset,
 			tsn->ingress_time,
 			(tsn->cumulativeScaledRateOffset + 0.0) / P41,
@@ -418,7 +420,8 @@ static void pmc_show(struct ptp_message *msg, FILE *fp)
 			tsn->lastGmPhaseChange.nanoseconds_lsb,
 			tsn->lastGmPhaseChange.fractional_nanoseconds,
 			tsn->gmPresent ? "true" : "false",
-			cid2str(&tsn->gmIdentity));
+			cid2str(&tsn->gmIdentity),
+			servo_state_str(tsn->servo_state));
 		break;
 	case MID_GRANDMASTER_SETTINGS_NP:
 		gsn = (struct grandmaster_settings_np *) mgt->data;

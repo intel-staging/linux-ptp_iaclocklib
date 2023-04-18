@@ -599,6 +599,7 @@ static void update_clock(struct domain *domain, struct clock *clock,
 	clock->servo_state = state;
 
 	switch (state) {
+	default:
 	case SERVO_UNLOCKED:
 		break;
 	case SERVO_JUMP:

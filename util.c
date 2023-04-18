@@ -792,3 +792,14 @@ int rate_limited(int interval, time_t *last)
 
 	return 0;
 }
+
+const char *servo_state_str(enum servo_state servo_state)
+{
+	enum servo_state state;
+
+	for (state = SERVO_INVALID+1; state < SERVO_LAST; ++state) {
+		if (state == servo_state)
+			break;
+	}
+	return servo_state_string[state];
+}

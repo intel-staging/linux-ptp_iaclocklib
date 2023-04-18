@@ -748,8 +748,8 @@ capable:
 	if (p->asCapable == NOT_CAPABLE) {
 		pr_debug("%s: setting asCapable", p->log_name);
 		p->asCapable = AS_CAPABLE;
-		port_notify_event(p, NOTIFY_PORT_STATE);
-		port_notify_event(p, NOTIFY_PORT_STATE_NP);
+		port_notify_event(p, NOTIFY_PORT_STATE, NULL);
+		port_notify_event(p, NOTIFY_PORT_STATE_NP, NULL);
 	}
 	return 1;
 
@@ -757,8 +757,8 @@ not_capable:
 	if (p->asCapable)
 		port_nrate_initialize(p);
 	if (p->asCapable != NOT_CAPABLE) {
-		port_notify_event(p, NOTIFY_PORT_STATE);
-		port_notify_event(p, NOTIFY_PORT_STATE_NP);
+		port_notify_event(p, NOTIFY_PORT_STATE, NULL);
+		port_notify_event(p, NOTIFY_PORT_STATE_NP, NULL);
 	}
 	p->asCapable = NOT_CAPABLE;
 	return 0;
@@ -1380,6 +1380,7 @@ static void port_synchronize(struct port *p,
 	last_state = clock_servo_state(p->clock);
 	state = clock_synchronize(p->clock, t2, t1c);
 	switch (state) {
+	default:
 	case SERVO_UNLOCKED:
 		port_dispatch(p, EV_SYNCHRONIZATION_FAULT, 0);
 		if (servo_offset_threshold(clock_servo(p->clock)) != 0 &&
@@ -2865,6 +2866,8 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 			p->service_stats.announce_timeout++;
 		}
 
+		clock_synchronize(p->clock, tmv_zero(), tmv_zero());
+
 		/*
 		 * Clear out the event returned by poll(). It is only cleared
 		 * in port_*_transition(). But, when BMCA == 'noop', there is no
@@ -3251,13 +3254,19 @@ struct ptp_message *port_management_notify(struct PortIdentity pid,
 	return port_management_construct(pid, port, 0, NULL, 1, GET);
 }
 
-void port_notify_event(struct port *p, enum notification event)
+void port_notify_event(struct port *p, enum notification event, struct clock_subscriber *s)
 {
 	struct PortIdentity pid = port_identity(p);
 	struct ptp_message *msg;
 	int id;
+	enum notification i;
 
 	switch (event) {
+	case NOTIFY_ALL:
+		for(i = NOTIFY_ZERO+1; i < NOTIFY_ALL; ++i) {
+			port_notify_event(p, i, s);
+		}
+		break;
 	case NOTIFY_PORT_STATE:
 		id = MID_PORT_DATA_SET;
 		break;
@@ -3276,7 +3285,7 @@ void port_notify_event(struct port *p, enum notification event)
 		goto err;
 	if (msg_pre_send(msg))
 		goto err;
-	clock_send_notification(p->clock, msg, event);
+	clock_send_notification(p->clock, msg, event, s);
 err:
 	msg_put(msg);
 }
@@ -3535,7 +3544,7 @@ int port_state_update(struct port *p, enum fsm_event event, int mdiff)
 	if (next != p->state) {
 		port_show_transition(p, next, event);
 		p->state = next;
-		port_notify_event(p, NOTIFY_PORT_STATE);
+		port_notify_event(p, NOTIFY_PORT_STATE, NULL);
 		p->unicast_state_dirty = true;
 		return 1;
 	}
