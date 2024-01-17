@@ -14,6 +14,14 @@
   GNU General Public License. See the file, COPYING, for details of
   the license terms.
 
+* Disclaimer
+
+  Note: This project is under development. All source code and features
+  on the main branch is for the purpose of testing or evaluation and not
+  production ready. We will upstream the code into
+  https://sourceforge.net/projects/linuxptp/ and archive this GitHub repo
+  thereafter (making it Read-only)
+
 * Features
 
   - Supports hardware and software time stamping via the Linux
