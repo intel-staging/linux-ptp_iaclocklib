@@ -19,6 +19,8 @@
   Note: This project is under development. All source code and features
   on the main branch are for the purpose of testing or evaluation and
   not production ready.
+  This repo will eventually discontinue once we upstream to
+  https://sourceforge.net/projects/linuxptp/.
 
 * Features
 
