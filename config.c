@@ -222,6 +222,13 @@ static struct config_enum nw_trans_enu[] = {
 	{ NULL, 0 },
 };
 
+//TODO: Change to accomodate Enumeration1
+static struct config_enum nrr_comp_enu[] = {
+	{ "SYNC", SYNC },
+	{ "PDELAY", PDELAY_RESP },
+	{ NULL, 0 },
+};
+
 static struct config_enum timestamping_enu[] = {
 	{ "hardware", TS_HARDWARE  },
 	{ "software", TS_SOFTWARE  },
@@ -321,6 +328,7 @@ struct config_item config_tab[] = {
 	PORT_ITEM_INT("neighborPropDelayThresh", 20000000, 0, INT_MAX),
 	PORT_ITEM_INT("net_sync_monitor", 0, 0, 1),
 	PORT_ITEM_ENU("network_transport", TRANS_UDP_IPV4, nw_trans_enu),
+	PORT_ITEM_ENU("nrrCompMethod", PDELAY_RESP, nrr_comp_enu),
 	GLOB_ITEM_INT("ntpshm_segment", 0, INT_MIN, INT_MAX),
 	GLOB_ITEM_INT("offsetScaledLogVariance", 0xffff, 0, UINT16_MAX),
 	PORT_ITEM_INT("operLogPdelayReqInterval", 0, INT8_MIN, INT8_MAX),
