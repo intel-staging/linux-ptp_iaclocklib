@@ -1399,6 +1399,35 @@ static void port_nrate_calculate(struct port *p, tmv_t origin, tmv_t ingress)
 	n->ratio_valid = 1;
 }
 
+void port_nrate_sync_calculate(struct port *p, tmv_t origin, tmv_t ingress)
+{
+	struct nrate_estimator *n = &p->nrate_sync;
+
+	if (tmv_is_zero(n->ingress1)) {
+		n->ingress1 = ingress;
+		n->origin1 = origin;
+		return;
+	}
+	// TODO: This need to be tune as too freq might cause too much noise
+	// pr_debug(" max_count: %u, count: %u", n->max_count, n->count);
+	n->count++;
+	// if (n->count < n->max_count) {
+	//      return;
+	// }
+	if (tmv_cmp(ingress, n->ingress1) == 0) {
+		pr_warning("bad timestamps in nrate sync calculation");
+		return;
+	}
+
+	n->ratio =
+		tmv_dbl(tmv_sub(origin, n->origin1)) /
+		tmv_dbl(tmv_sub(ingress, n->ingress1));
+	n->ingress1 = ingress;
+	n->origin1 = origin;
+	n->count = 0;
+	n->ratio_valid = 1;
+}
+
 static void port_nrate_initialize(struct port *p)
 {
 	int shift = p->freq_est_interval - p->logPdelayReqInterval;
@@ -1415,12 +1444,22 @@ static void port_nrate_initialize(struct port *p)
 
 	p->peer_portid_valid = 0;
 
+	/* Initialize nrate */
 	p->nrate.origin1 = tmv_zero();
 	p->nrate.ingress1 = tmv_zero();
 	p->nrate.max_count = (1U << shift);
 	p->nrate.count = 0;
 	p->nrate.ratio = 1.0;
 	p->nrate.ratio_valid = 0;
+
+	/* TODO: Revise this assignment */
+	/* Initialize nrate_sync */
+	p->nrate_sync.origin1 = tmv_zero();
+	p->nrate_sync.ingress1 = tmv_zero();
+	p->nrate_sync.max_count = (1U << shift);
+	p->nrate_sync.count = 0;
+	p->nrate_sync.ratio = 1.0;
+	p->nrate_sync.ratio_valid = 0;
 }
 
 int port_set_announce_tmo(struct port *p)
@@ -2183,6 +2222,7 @@ int port_initialize(struct port *p)
 	p->logPdelayReqInterval    = p->logMinPdelayReqInterval;
 	p->operLogPdelayReqInterval = config_get_int(cfg, p->name, "operLogPdelayReqInterval");
 	p->neighborPropDelayThresh = config_get_int(cfg, p->name, "neighborPropDelayThresh");
+	p->nrrCompMethod = config_get_int(cfg, p->name, "nrrCompMethod");
 	p->min_neighbor_prop_delay = config_get_int(cfg, p->name, "min_neighbor_prop_delay");
 	p->delay_request_variability = config_get_double(cfg, p->name, "delay_request_variability");
 	p->delay_response_timeout  = config_get_int(cfg, p->name, "delay_response_timeout");
@@ -2576,6 +2616,14 @@ void process_follow_up(struct port *p, struct ptp_message *m)
 	if (clock_drift_tracking(p->clock)) {
 		struct drift_tracking_tlv *dt = drift_tracking_extract(m);
 		clock_drift_tracking_update(p->clock, dt);
+		/* Calculate nrrSync */
+		tmv_t t1, t1c;
+		t1 = extended_to_tmv(&dt->syncEgressTimestamp);
+		t1c = tmv_add(t1, correction_to_tmv(p->asymmetry)); // do we need to add asymmetry here?
+		pr_debug("%s: t1=%" PRId64 ", asymmetry=%" PRId64 ", t1c=%" PRId64, p->log_name,
+				tmv_to_nanoseconds(t1), tmv_to_nanoseconds(correction_to_tmv(p->asymmetry)), tmv_to_nanoseconds(t1c));
+		if (dt && p->nrrCompMethod == SYNC) // Q: if no dt tlv do we still calculate nrrSync?
+			port_nrate_sync_calculate(p, t1c, p->syncIngressTimestamp);
 	}
 
 	if (p->syfu == SF_HAVE_SYNC &&
@@ -2780,11 +2828,15 @@ calc:
 		t3c = tmv_add(t3, tmv_add(c1, c2));
 	}
 
+	/* Calculate nrrPdelay */
 	if (p->follow_up_info)
 		port_nrate_calculate(p, t3c, t4);
 
-	tsproc_set_clock_rate_ratio(p->tsproc, p->nrate.ratio *
-				    clock_rate_ratio(p->clock));
+	/* TODO: the nrrSync only need to use here or global nrr? */
+	double nrr = (p->nrrCompMethod == SYNC || clock_drift_tracking(p->clock)) ?
+		p->nrate_sync.ratio : p->nrate.ratio;
+
+	tsproc_set_clock_rate_ratio(p->tsproc, nrr * clock_rate_ratio(p->clock));
 	tsproc_up_ts(p->tsproc, t1, t2);
 	tsproc_down_ts(p->tsproc, t3c, t4);
 	if (tsproc_update_delay(p->tsproc, &p->peer_delay))
@@ -2793,8 +2845,7 @@ calc:
 	p->peerMeanPathDelay = tmv_to_TimeInterval(p->peer_delay);
 
 	if (p->state == PS_UNCALIBRATED || p->state == PS_SLAVE) {
-		clock_peer_delay(p->clock, p->peer_delay, t1, t2,
-				 p->nrate.ratio);
+		clock_peer_delay(p->clock, p->peer_delay, t1, t2, nrr);
 	}
 
 	msg_put(p->peer_delay_req);
