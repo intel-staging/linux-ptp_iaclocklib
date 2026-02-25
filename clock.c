@@ -1560,6 +1560,24 @@ int clock_drift_tracking(struct clock *c)
 	return c->drift_tracking ? 1 : 0;
 }
 
+void clock_drift_tracking_update(struct clock *c, struct drift_tracking_tlv *dt)
+{
+	if (!dt) {
+		pr_debug(1, "Received msg does not contain drift_tracking TLV"); // TODO: Need to verify when setup available
+		memset(&c->status.syncGrandmasterIdentity, 0xFF, sizeof(c->status.syncGrandmasterIdentity));
+		c->status.syncStepsRemoved = 0xFFFF;
+		c->status.rateRatioDrift = 0xFFFFFFFF;
+		return;
+	}
+
+	memcpy(&c->status.syncGrandmasterIdentity, &dt->syncGrandmasterIdentity, sizeof(c->status.syncGrandmasterIdentity));
+	if (dt->syncStepsRemoved == 0xFFFF)
+		c->status.syncStepsRemoved = dt->syncStepsRemoved;
+	else
+		c->status.syncStepsRemoved = dt->syncStepsRemoved + 1;
+	c->status.rateRatioDrift = dt->rateRatioDrift;
+}
+
 int clock_free_running(struct clock *c)
 {
 	return c->free_running ? 1 : 0;

@@ -92,6 +92,7 @@ struct port {
 		UInteger16 signaling;
 		UInteger16 sync;
 	} seqnum;
+	tmv_t syncIngressTimestamp; // TODO: Discuss whether we need this?
 	tmv_t peer_delay;
 	struct tsproc *tsproc;
 	int log_sync_interval;
