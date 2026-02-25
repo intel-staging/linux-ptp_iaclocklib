@@ -113,6 +113,7 @@ struct clock {
 	int nports; /* does not include the two UDS ports */
 	int last_port_number;
 	int sde;
+	int drift_tracking;
 	int free_running;
 	int freq_est_interval;
 	int local_sync_uncertain;
@@ -1327,6 +1328,7 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	}
 
 	c->config = config;
+	c->drift_tracking = config_get_int(config, NULL, "drift_tracking");
 	c->free_running = config_get_int(config, NULL, "free_running");
 	c->freq_est_interval = config_get_int(config, NULL, "freq_est_interval");
 	c->local_sync_uncertain = SYNC_UNCERTAIN_DONTCARE;
@@ -1551,6 +1553,11 @@ void clock_follow_up_info(struct clock *c, struct follow_up_info_tlv *f)
 	c->status.gmTimeBaseIndicator = f->gmTimeBaseIndicator;
 	memcpy(&c->status.lastGmPhaseChange, &f->lastGmPhaseChange,
 	       sizeof(c->status.lastGmPhaseChange));
+}
+
+int clock_drift_tracking(struct clock *c)
+{
+	return c->drift_tracking ? 1 : 0;
 }
 
 int clock_free_running(struct clock *c)
