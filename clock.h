@@ -283,6 +283,13 @@ void clock_peer_delay(struct clock *c, tmv_t ppd, tmv_t req, tmv_t rx,
 		      double nrr);
 
 /**
+ * Update the clock's cached neighbor rate ratio.
+ * @param c    The clock instance.
+ * @param nrr  The neighbor rate ratio.
+ */
+void clock_set_nrr(struct clock *c, double nrr);
+
+/**
  * Set clock sde
  * @param c     A pointer to a clock instance obtained with clock_create().
  * @param sde   Pass one (1) if need a decision event and zero if not.

@@ -355,6 +355,14 @@ void fault_interval(struct port *port, enum fault_type ft,
 enum bmca_select port_bmca(struct port *p);
 
 /**
+ * Obtain the nrrCompMethod of the port.
+ *
+ * @param p  A port instance.
+ * @return   NRR_PDELAY or NRR_SYNC.
+ */
+enum nrr_comp_method port_nrr_comp_method(struct port *p);
+
+/**
  * Release all of the memory in the TC transmit descriptor cache.
  */
 void tc_cleanup(void);

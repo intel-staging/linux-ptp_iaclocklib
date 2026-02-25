@@ -1612,6 +1612,19 @@ struct drift_tracking_np *clock_drift_tracking_data(struct clock *c)
 	return &c->dtdata;
 }
 
+static enum nrr_comp_method clock_nrr_comp_method(struct clock *c)
+{
+	struct port *p = clock_best_port(c);
+
+	if (!p) {
+		p = LIST_FIRST(&c->ports);
+	}
+	if (!p) {
+		return NRR_PDELAY;
+	}
+	return port_nrr_comp_method(p);
+}
+
 int clock_free_running(struct clock *c)
 {
 	return c->free_running ? 1 : 0;
@@ -2023,13 +2036,20 @@ void clock_peer_delay(struct clock *c, tmv_t ppd, tmv_t req, tmv_t rx,
 		      double nrr)
 {
 	c->path_delay = ppd;
-	c->nrr = nrr;
+	if (clock_nrr_comp_method(c) == NRR_PDELAY) {
+		c->nrr = nrr;
+	}
 
 	tsproc_set_delay(c->tsproc, ppd);
 	tsproc_up_ts(c->tsproc, req, rx);
 
 	if (c->stats.delay)
 		stats_add_value(c->stats.delay, tmv_dbl(ppd));
+}
+
+void clock_set_nrr(struct clock *c, double nrr)
+{
+	c->nrr = nrr;
 }
 
 struct monitor *clock_slave_monitor(struct clock *c)

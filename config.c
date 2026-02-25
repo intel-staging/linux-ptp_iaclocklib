@@ -222,6 +222,12 @@ static struct config_enum nw_trans_enu[] = {
 	{ NULL, 0 },
 };
 
+static struct config_enum nrr_comp_enu[] = {
+	{ "nrrPdelay", NRR_PDELAY },
+	{ "nrrSync", NRR_SYNC },
+	{ NULL, 0 },
+};
+
 static struct config_enum timestamping_enu[] = {
 	{ "hardware", TS_HARDWARE  },
 	{ "software", TS_SOFTWARE  },
@@ -255,6 +261,7 @@ struct config_item config_tab[] = {
 	PORT_ITEM_UIN("active_key_id", 0, 0, UINT32_MAX),
 	PORT_ITEM_INT("allow_unauth", 0, 0, 2),
 	PORT_ITEM_INT("allowedLostResponses", 3, 1, 255),
+	PORT_ITEM_INT("allowedDriftTrackingTlvLost", 8, 1, 255),
 	PORT_ITEM_INT("announceReceiptTimeout", 3, 2, UINT8_MAX),
 	PORT_ITEM_ENU("asCapable", AS_CAPABLE_AUTO, as_capable_enu),
 	GLOB_ITEM_INT("assume_two_step", 0, 0, 1),
@@ -321,6 +328,7 @@ struct config_item config_tab[] = {
 	PORT_ITEM_INT("neighborPropDelayThresh", 20000000, 0, INT_MAX),
 	PORT_ITEM_INT("net_sync_monitor", 0, 0, 1),
 	PORT_ITEM_ENU("network_transport", TRANS_UDP_IPV4, nw_trans_enu),
+	PORT_ITEM_ENU("nrrCompMethod", NRR_PDELAY, nrr_comp_enu),
 	GLOB_ITEM_INT("ntpshm_segment", 0, INT_MIN, INT_MAX),
 	GLOB_ITEM_INT("offsetScaledLogVariance", 0xffff, 0, UINT16_MAX),
 	PORT_ITEM_INT("operLogPdelayReqInterval", 0, INT8_MIN, INT8_MAX),
