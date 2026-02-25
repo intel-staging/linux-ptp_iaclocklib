@@ -453,6 +453,77 @@ static int follow_up_info_append(struct ptp_message *m)
 	return 0;
 }
 
+// TODO: Do we need this func or just convert directly?
+static void Timestamp_to_extended(const struct Timestamp *src, struct ExtendedTimestamp *dst)
+{
+	dst->seconds_msb = src->seconds_msb;
+	dst->seconds_lsb = src->seconds_lsb;
+
+	uint64_t frac = (uint64_t)src->nanoseconds << 16;
+	dst->fractionalNanoseconds_msb = (frac >> 32) & 0xFFFF;
+	dst->fractionalNanoseconds_lsb = frac & 0xFFFFFFFF;
+}
+
+static int drift_tracking_append(struct port *p, struct ptp_message *m)
+{
+	struct drift_tracking_tlv *dt;
+	struct tlv_extra *extra;
+
+	extra = msg_tlv_append(m, sizeof(*dt));
+	if (!extra) {
+		return -1;
+	}
+	dt = (struct drift_tracking_tlv *) extra->tlv;
+	dt->type = TLV_ORGANIZATION_EXTENSION;
+	dt->length = sizeof(*dt) - sizeof(dt->type) - sizeof(dt->length);
+	memcpy(dt->id, ieee8021_id, sizeof(ieee8021_id));
+	dt->subtype[2] = 6;
+	memcpy(dt->syncGrandmasterIdentity.id,
+		clock_parent_ds(p->clock)->pds.grandmasterIdentity.id,
+		sizeof(dt->syncGrandmasterIdentity.id));
+	dt->syncStepsRemoved = 0;
+	Timestamp_to_extended(&m->follow_up.preciseOriginTimestamp,
+		&dt->syncEgressTimestamp);
+	dt->rateRatioDrift = 0;
+
+	return 0;
+}
+
+// static int drift_tracking_amend(struct ptp_message *m)
+// {
+// 	struct drift_tracking_tlv *dt;
+// 	struct tlv_extra *extra;
+// 	uint8_t *ptr = m->follow_up.suffix + sizeof(struct follow_up_info_tlv);
+// 	dt = (struct drift_tracking_tlv *) ptr;
+
+// 	/* If msg doesn't contain drift_tracking TLV, set default values*/
+// 	if (dt->subtype[2] != 6) {
+// 		pr_debug("No drift_tracking TLV found, adding drift_tracking TLV"); // Do we need this debug log?
+
+// 		extra = msg_tlv_append(m, sizeof(*dt));
+// 		if (!extra) {
+// 			return -1;
+// 		}
+// 		dt = (struct drift_tracking_tlv *) extra->tlv;
+
+// 		memset(dt, 0, sizeof(*dt));
+// 		dt->type = TLV_ORGANIZATION_EXTENSION;
+// 		dt->length = sizeof(*dt) - sizeof(dt->type) - sizeof(dt->length);
+// 		memcpy(dt->id, ieee8021_id, sizeof(ieee8021_id));
+// 		dt->subtype[2] = 6;
+// 		memset(&dt->syncGrandmasterIdentity, 0xFF, sizeof(dt->syncGrandmasterIdentity));
+// 		dt->syncStepsRemoved = 0xFFFF;
+// 		dt->rateRatioDrift = 0;
+// 		m->header.messageLength = m->header.messageLength + sizeof(*dt);
+// 		return sizeof(*dt);
+// 	}
+
+// 	if (dt->syncStepsRemoved != 0xFFFF)
+// 		dt->syncStepsRemoved++;
+
+// 	return 0;
+// }
+
 static int ieee_c37_238_append(struct port *p, struct ptp_message *m)
 {
 	struct ieee_c37_238_2017_tlv *p17;
@@ -569,6 +640,22 @@ static struct follow_up_info_tlv *follow_up_info_extract(struct ptp_message *m)
 //		    memcmp(f->id, ieee8021_id, sizeof(ieee8021_id)) &&
 		    !f->subtype[0] && !f->subtype[1] && f->subtype[2] == 1) {
 			return f;
+		}
+	}
+	return NULL;
+}
+
+static struct drift_tracking_tlv *drift_tracking_extract(struct ptp_message *m)
+{
+	struct drift_tracking_tlv *dt;
+	struct tlv_extra *extra;
+
+	TAILQ_FOREACH(extra, &m->tlv_list, list) {
+		dt = (struct drift_tracking_tlv *) extra->tlv;
+		if (dt->type == TLV_ORGANIZATION_EXTENSION &&
+		    dt->length == sizeof(*dt) - sizeof(dt->type) - sizeof(dt->length) &&
+		    !dt->subtype[0] && !dt->subtype[1] && dt->subtype[2] == 6) {
+			return dt;
 		}
 	}
 	return NULL;
@@ -1919,6 +2006,12 @@ int port_tx_sync(struct port *p, struct address *dst, uint16_t sequence_id)
 		err = -1;
 		goto out;
 	}
+	if (clock_drift_tracking(p->clock) &&
+		drift_tracking_append(p, fup)) {
+		pr_err("%s: append drift tracking failed", p->log_name);
+		err = -1;
+		goto out;
+	}
 
 	err = port_prepare_and_send(p, fup, TRANS_GENERAL);
 	if (err) {
@@ -2478,6 +2571,11 @@ void process_follow_up(struct port *p, struct ptp_message *m)
 		if (!fui)
 			return;
 		clock_follow_up_info(p->clock, fui);
+	}
+
+	if (clock_drift_tracking(p->clock)) {
+		struct drift_tracking_tlv *dt = drift_tracking_extract(m);
+		clock_drift_tracking_update(p->clock, dt);
 	}
 
 	if (p->syfu == SF_HAVE_SYNC &&
@@ -3282,6 +3380,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 	}
 	if (msg_sots_valid(msg)) {
 		ts_add(&msg->hwts.ts, -p->rx_timestamp_offset);
+		p->syncIngressTimestamp = msg->hwts.ts;
 		if (p->state == PS_SLAVE) {
 			clock_check_ts(p->clock,
 				       tmv_to_nanoseconds(msg->hwts.ts));

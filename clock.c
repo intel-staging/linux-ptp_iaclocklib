@@ -560,6 +560,10 @@ static int clock_management_fill_response(struct clock *c, struct port *p,
 		else
 			tsn->gmPresent = 1;
 		tsn->gmIdentity = c->dad.pds.grandmasterIdentity;
+		// Q: Do we need this?
+		tsn->syncGrandmasterIdentity = c->status.syncGrandmasterIdentity;
+		tsn->syncStepsRemoved = c->status.syncStepsRemoved;
+		tsn->rateRatioDrift = c->status.rateRatioDrift;
 		datalen = sizeof(*tsn);
 		break;
 	case MID_GRANDMASTER_SETTINGS_NP:
@@ -1558,6 +1562,24 @@ void clock_follow_up_info(struct clock *c, struct follow_up_info_tlv *f)
 int clock_drift_tracking(struct clock *c)
 {
 	return c->drift_tracking ? 1 : 0;
+}
+
+void clock_drift_tracking_update(struct clock *c, struct drift_tracking_tlv *dt)
+{
+	if (!dt) {
+		pr_debug("Received msg does not contain drift_tracking TLV"); // Q: Do we need this debug log?
+		memset(&c->status.syncGrandmasterIdentity, 0xFF, sizeof(c->status.syncGrandmasterIdentity));
+		c->status.syncStepsRemoved = 0xFFFF;
+		c->status.rateRatioDrift = 0xFFFFFFFF;
+		return;
+	}
+
+	memcpy(&c->status.syncGrandmasterIdentity, &dt->syncGrandmasterIdentity, sizeof(c->status.syncGrandmasterIdentity));
+	if (dt->syncStepsRemoved == 0xFFFF)
+		c->status.syncStepsRemoved = dt->syncStepsRemoved;
+	else
+		c->status.syncStepsRemoved = dt->syncStepsRemoved + 1;
+	c->status.rateRatioDrift = dt->rateRatioDrift;
 }
 
 int clock_free_running(struct clock *c)
