@@ -280,6 +280,7 @@ struct config_item config_tab[] = {
 	PORT_ITEM_DBL("delay_request_variability", 1.0, 0.0, 1.0),
 	PORT_ITEM_ENU("delay_mechanism", DM_E2E, delay_mech_enu),
 	PORT_ITEM_INT("delay_response_timeout", 0, 0, UINT8_MAX),
+	GLOB_ITEM_INT("drift_tracking", 0, 0, 1),
 	GLOB_ITEM_INT("dscp_event", 0, 0, 63),
 	GLOB_ITEM_INT("dscp_general", 0, 0, 63),
 	GLOB_ITEM_INT("domainNumber", 0, 0, 255),

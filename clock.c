@@ -136,6 +136,7 @@ struct clock {
 	struct tsproc *tsproc;
 	struct freq_estimator fest;
 	struct time_status_np status;
+	struct drift_tracking_np dtdata;
 	double master_local_rr; /* maintained when free_running */
 	double nrr;
 	struct clock_description desc;
@@ -1326,6 +1327,15 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 		return NULL;
 	}
 
+	/* Initialize drift_tracking related data */
+	c->dtdata.driftTrackingTlvSupport = config_get_int(config, NULL, "drift_tracking");
+	if (c->dtdata.driftTrackingTlvSupport) {
+		memset(&c->dtdata.syncGrandmasterIdentity, 0, sizeof(c->dtdata.syncGrandmasterIdentity));
+		memset(&c->dtdata.syncEgressTimestamp, 0, sizeof(c->dtdata.syncEgressTimestamp));
+		c->dtdata.syncStepsRemoved = 0;
+		c->dtdata.rateRatioDrift = 0;
+	}
+
 	c->config = config;
 	c->free_running = config_get_int(config, NULL, "free_running");
 	c->freq_est_interval = config_get_int(config, NULL, "freq_est_interval");
@@ -1551,6 +1561,11 @@ void clock_follow_up_info(struct clock *c, struct follow_up_info_tlv *f)
 	c->status.gmTimeBaseIndicator = f->gmTimeBaseIndicator;
 	memcpy(&c->status.lastGmPhaseChange, &f->lastGmPhaseChange,
 	       sizeof(c->status.lastGmPhaseChange));
+}
+
+int clock_drift_tracking(struct clock *c)
+{
+	return c->dtdata.driftTrackingTlvSupport ? 1 : 0;
 }
 
 int clock_free_running(struct clock *c)
