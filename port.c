@@ -61,7 +61,7 @@ static int port_is_ieee8021as(struct port *p);
 static int port_is_uds(struct port *p);
 static int port_has_security(struct port *p);
 static void port_nrate_initialize(struct port *p);
-
+static void port_nrate_sync_initialize(struct port *p);
 
 static void timestamp_to_extended(const struct Timestamp *src, struct ExtendedTimestamp *dst)
 {
@@ -628,8 +628,14 @@ static struct drift_tracking_tlv *drift_tracking_extract(struct port *p, struct 
 		    dt->length == sizeof(*dt) - sizeof(dt->type) - sizeof(dt->length) &&
 		    memcmp(dt->id, ieee8021_id, sizeof(ieee8021_id)) == 0 &&
 		    !dt->subtype[0] && !dt->subtype[1] && dt->subtype[2] == 6) {
+			p->dt_missing = 0;
 			return dt;
 		}
+	}
+	p->dt_missing++;
+	if (p->dt_missing == p->allowedDriftTrackingTlvLost) {
+		pr_debug("%s: missed %d drift_tracking TLV, "
+		   "falling back to NRR_PDELAY", p->log_name, p->dt_missing);
 	}
 	return NULL;
 }
@@ -828,8 +834,10 @@ capable:
 	return 1;
 
 not_capable:
-	if (p->asCapable)
+	if (p->asCapable) {
 		port_nrate_initialize(p);
+		port_nrate_sync_initialize(p);
+	}
 	p->asCapable = NOT_CAPABLE;
 	port_notify_event(p, NOTIFY_CMLDS);
 	return 0;
@@ -1372,6 +1380,40 @@ static void port_nrate_calculate(struct port *p, tmv_t origin, tmv_t ingress)
 	n->ratio_valid = 1;
 }
 
+void port_nrate_sync_calculate(struct port *p, tmv_t origin, tmv_t ingress)
+{
+	struct nrate_estimator *n = &p->nrate_sync;
+
+	if (tmv_is_zero(n->ingress1)) {
+		n->ingress1 = ingress;
+		n->origin1 = origin;
+		return;
+	}
+	if (tmv_cmp(ingress, n->ingress1) == 0) {
+		pr_warning("bad timestamps in nrate sync calculation");
+		return;
+	}
+
+	n->ratio =
+		tmv_dbl(tmv_sub(origin, n->origin1)) /
+		tmv_dbl(tmv_sub(ingress, n->ingress1));
+	n->ingress1 = ingress;
+	n->origin1 = origin;
+	n->ratio_valid = 1;
+
+	clock_set_nrr(p->clock, p->nrate_sync.ratio);
+}
+
+static void port_nrate_sync_initialize(struct port *p)
+{
+	p->dt_missing = p->allowedDriftTrackingTlvLost + 1;
+
+	p->nrate_sync.origin1 = tmv_zero();
+	p->nrate_sync.ingress1 = tmv_zero();
+	p->nrate_sync.ratio = 1.0;
+	p->nrate_sync.ratio_valid = 0;
+}
+
 static void port_nrate_initialize(struct port *p)
 {
 	int shift = p->freq_est_interval - p->logPdelayReqInterval;
@@ -1507,6 +1549,17 @@ static void port_synchronize(struct port *p,
 	c1 = correction_to_tmv(correction1);
 	c2 = correction_to_tmv(correction2);
 	t1c = tmv_add(t1, tmv_add(c1, c2));
+
+	if (clock_drift_tracking(p->clock) && p->nrrCompMethod == NRR_SYNC) {
+		struct drift_tracking_np *dtdata = clock_drift_tracking_data(p->clock);
+		tmv_t origin, corrected_origin;
+		origin = extended_to_tmv(&dtdata->syncEgressTimestamp);
+		if (!tmv_is_zero(origin)) {
+			corrected_origin = tmv_add(origin,
+					   dbl_tmv(p->asymmetry / (clock_rate_ratio(p->clock))));
+			port_nrate_sync_calculate(p, corrected_origin, t2);
+		}
+	}
 
 	switch (p->state) {
 	case PS_UNCALIBRATED:
@@ -2156,6 +2209,9 @@ int port_initialize(struct port *p)
 	p->logPdelayReqInterval    = p->logMinPdelayReqInterval;
 	p->operLogPdelayReqInterval = config_get_int(cfg, p->name, "operLogPdelayReqInterval");
 	p->neighborPropDelayThresh = config_get_int(cfg, p->name, "neighborPropDelayThresh");
+	if (clock_drift_tracking(p->clock)) {
+		p->nrrCompMethod           = config_get_int(cfg, p->name, "nrrCompMethod");
+	}
 	p->min_neighbor_prop_delay = config_get_int(cfg, p->name, "min_neighbor_prop_delay");
 	p->delay_request_variability = config_get_double(cfg, p->name, "delay_request_variability");
 	p->delay_response_timeout  = config_get_int(cfg, p->name, "delay_response_timeout");
@@ -2219,6 +2275,7 @@ int port_initialize(struct port *p)
 	}
 
 	port_nrate_initialize(p);
+	port_nrate_sync_initialize(p);
 
 	clock_fda_changed(p->clock);
 	return 0;
@@ -3784,6 +3841,8 @@ struct port *port_open(const char *phc_device,
 		config_get_int(cfg, p->name, "power_profile.2017.totalTimeInaccuracy");
 	p->slave_event_monitor = clock_slave_monitor(clock);
 	p->allowedLostResponses = config_get_int(cfg, p->name, "allowedLostResponses");
+	p->allowedDriftTrackingTlvLost =
+		config_get_int(cfg, p->name, "allowedDriftTrackingTlvLost");
 	p->spp = config_get_int(cfg, p->name, "spp");
 	p->active_key_id = config_get_uint(cfg, p->name, "active_key_id");
 
@@ -3946,6 +4005,14 @@ int port_state_update(struct port *p, enum fsm_event event, int mdiff)
 enum bmca_select port_bmca(struct port *p)
 {
 	return p->bmca;
+}
+
+enum nrr_comp_method port_nrr_comp_method(struct port *p)
+{
+	if (p->nrrCompMethod == NRR_SYNC && p->dt_missing >= p->allowedDriftTrackingTlvLost) {
+		return NRR_PDELAY;
+	}
+	return p->nrrCompMethod;
 }
 
 void port_update_unicast_state(struct port *p)

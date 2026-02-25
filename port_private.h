@@ -96,6 +96,9 @@ struct port {
 	struct tsproc *tsproc;
 	int log_sync_interval;
 	struct nrate_estimator nrate;
+	struct nrate_estimator nrate_sync;
+	enum nrr_comp_method    nrrCompMethod;
+	unsigned int dt_missing;
 	unsigned int pdr_missing;
 	unsigned int multiple_seq_pdr_count;
 	unsigned int multiple_pdr_detected;
@@ -148,6 +151,7 @@ struct port {
 	UInteger8	    delay_response_counter;
 	UInteger8	    delay_response_timeout;
 	UInteger8	    allowedLostResponses;
+	UInteger8	    allowedDriftTrackingTlvLost;
 	bool		    iface_rate_tlv;
 	Integer64	    portAsymmetry;
 	struct PortStats    stats;

@@ -73,6 +73,11 @@
 #define SIGNAL_NO_CHANGE   -128
 #define SIGNAL_SET_INITIAL 126
 
+enum nrr_comp_method{
+	NRR_PDELAY,
+	NRR_SYNC,
+};
+
 enum timestamp_type {
 	TS_SOFTWARE,
 	TS_HARDWARE,
