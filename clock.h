@@ -158,6 +158,20 @@ void clock_follow_up_info(struct clock *c, struct follow_up_info_tlv *f);
 int clock_drift_tracking(struct clock *c);
 
 /**
+ * Update the drift_tracking information of a clock.
+ * @param c  The clock instance.
+ * @param dt Pointer to the drift_tracking TLV.
+ */
+void clock_update_drift_tracking(struct clock *c, struct drift_tracking_tlv *dt);
+
+/**
+ * Obtain a clock's drift_tracking data.
+ * @param c  The clock instance.
+ * @return   A pointer to the drift_tracking data of the clock.
+ */
+struct drift_tracking_np *clock_drift_tracking_data(struct clock *c);
+
+/**
  * Determine if a clock is free running or not.
  * @param c  The clock instance.
  * @return   One if the clock is free running or zero otherwise.
