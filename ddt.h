@@ -33,6 +33,14 @@ struct Timestamp {
 	UInteger32 nanoseconds;
 } PACKED;
 
+/** On the wire time stamp format. */
+struct ExtendedTimestamp {
+       uint16_t   seconds_msb; /* 16 bits + */
+       uint32_t   seconds_lsb; /* 32 bits = 48 bits */
+       uint16_t   fractionalNanoseconds_msb;  /* 16 bits + */
+       uint32_t   fractionalNanoseconds_lsb;  /* 32 bits = 48 bits */
+} PACKED;
+
 /** Internal binary time stamp format. */
 struct timestamp {
 	uint64_t   sec;
