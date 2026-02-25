@@ -69,6 +69,22 @@ static void timestamp_net2host(struct Timestamp *t)
 	NTOHL(t->nanoseconds);
 }
 
+void extended_timestamp_host2net(struct ExtendedTimestamp *et)
+{
+	HTONL(et->seconds_lsb);
+	HTONS(et->seconds_msb);
+	HTONL(et->fractionalNanoseconds_lsb);
+	HTONS(et->fractionalNanoseconds_msb);
+}
+
+void extended_timestamp_net2host(struct ExtendedTimestamp *et)
+{
+	NTOHL(et->seconds_lsb);
+	NTOHS(et->seconds_msb);
+	NTOHL(et->fractionalNanoseconds_lsb);
+	NTOHS(et->fractionalNanoseconds_msb);
+}
+
 static uint16_t flip16(void *p)
 {
 	uint16_t v;
@@ -828,6 +844,7 @@ static int org_post_recv(struct organization_tlv *org)
 {
 	struct ieee_c37_238_2017_tlv *p;
 	struct follow_up_info_tlv *f;
+	struct drift_tracking_tlv *dt;
 	struct msg_interface_rate_tlv *m;
 
 	if (0 == memcmp(org->id, ieee8021_id, sizeof(ieee8021_id))) {
@@ -848,6 +865,15 @@ static int org_post_recv(struct organization_tlv *org)
 		case 2:
 			if (org->length + sizeof(struct TLV) != sizeof(struct msg_interval_req_tlv))
 				goto bad_length;
+			break;
+		case 6:
+			if (org->length + sizeof(struct TLV) != sizeof(struct drift_tracking_tlv))
+				goto bad_length;
+			dt = (struct drift_tracking_tlv *) org;
+			extended_timestamp_net2host(&dt->syncEgressTimestamp);
+			dt->syncStepsRemoved = ntohs(dt->syncStepsRemoved);
+			dt->rateRatioDrift = ntohl(dt->rateRatioDrift);
+			break;
 		}
 	} else if (0 == memcmp(org->id, itu_t_id, sizeof(itu_t_id))) {
 		if (org->subtype[0] || org->subtype[1]) {
@@ -892,6 +918,7 @@ static void org_pre_send(struct organization_tlv *org)
 {
 	struct ieee_c37_238_2017_tlv *p;
 	struct follow_up_info_tlv *f;
+	struct drift_tracking_tlv *dt;
 	struct msg_interface_rate_tlv *m;
 
 	if (0 == memcmp(org->id, ieee8021_id, sizeof(ieee8021_id))) {
@@ -905,6 +932,12 @@ static void org_pre_send(struct organization_tlv *org)
 			f->gmTimeBaseIndicator = htons(f->gmTimeBaseIndicator);
 			scaled_ns_h2n(&f->lastGmPhaseChange);
 			f->scaledLastGmPhaseChange = htonl(f->scaledLastGmPhaseChange);
+			break;
+		case 6:
+			dt = (struct drift_tracking_tlv *) org;
+			extended_timestamp_host2net(&dt->syncEgressTimestamp);
+			dt->syncStepsRemoved = htons(dt->syncStepsRemoved);
+			dt->rateRatioDrift = htonl(dt->rateRatioDrift);
 			break;
 		}
 	} else if (0 == memcmp(org->id, itu_t_id, sizeof(itu_t_id))) {
