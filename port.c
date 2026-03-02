@@ -486,6 +486,30 @@ static int drift_tracking_append(struct port *p, struct ptp_message *m)
 		&dt->syncEgressTimestamp);
 	dt->rateRatioDrift = 0;
 
+	// TODO: Need to remove only for development debug purpose
+	struct ExtendedTimestamp a;
+	tmv_t b;
+
+	a.seconds_msb = dt->syncEgressTimestamp.seconds_msb;
+	a.seconds_lsb = dt->syncEgressTimestamp.seconds_lsb;
+	a.fractionalNanoseconds_msb = dt->syncEgressTimestamp.fractionalNanoseconds_msb;
+	a.fractionalNanoseconds_lsb = dt->syncEgressTimestamp.fractionalNanoseconds_lsb;
+	b = extended_to_tmv(&a);
+	pr_debug(" ======================================================");
+	pr_debug("  %s Transmit drift_tracking TLV:", p->log_name);
+	pr_debug(" ======================================================");
+	pr_debug("  length: %u", dt->length);
+	pr_debug("  id: %02x%02x%02x", dt->id[0], dt->id[1], dt->id[2]);
+	pr_debug("  subtype: %u,%u,%u", dt->subtype[0], dt->subtype[1], dt->subtype[2]);
+	pr_debug("  syncEgressTimestamp: %" PRId64, tmv_to_nanoseconds(b));
+	pr_debug("  syncGrandmasterIdentity: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+		dt->syncGrandmasterIdentity.id[0], dt->syncGrandmasterIdentity.id[1],
+		dt->syncGrandmasterIdentity.id[2], dt->syncGrandmasterIdentity.id[3],
+		dt->syncGrandmasterIdentity.id[4], dt->syncGrandmasterIdentity.id[5],
+		dt->syncGrandmasterIdentity.id[6], dt->syncGrandmasterIdentity.id[7]);
+	pr_debug("  syncStepsRemoved: %u", dt->syncStepsRemoved);
+	pr_debug("  rateRatioDrift: %d (%.9f)", dt->rateRatioDrift, (double)dt->rateRatioDrift / POW2_41);
+
 	return 0;
 }
 
@@ -1364,6 +1388,7 @@ static void port_nrate_calculate(struct port *p, tmv_t origin, tmv_t ingress)
 	n->ratio_valid = 1;
 }
 
+// TODO: Revise might need to add CMLDS delayAsymmetry compensation to the calculation
 void port_nrate_sync_calculate(struct port *p, tmv_t origin, tmv_t ingress)
 {
 	struct nrate_estimator *n = &p->nrate_sync;
@@ -1387,6 +1412,21 @@ void port_nrate_sync_calculate(struct port *p, tmv_t origin, tmv_t ingress)
 	n->ratio =
 		tmv_dbl(tmv_sub(origin, n->origin1)) /
 		tmv_dbl(tmv_sub(ingress, n->ingress1));
+
+	// TODO: Need to remove only for development debug purpose
+	pr_debug(" ======================================================");
+	pr_debug("  %s: Additional debug info - nrrSync", p->log_name);
+	pr_debug(" ======================================================");
+	pr_debug("  origin      : %" PRId64, tmv_to_nanoseconds(origin));
+	pr_debug("  origin1     : %" PRId64, tmv_to_nanoseconds(n->origin1));
+	pr_debug("  origin diff : %" PRId64, tmv_to_nanoseconds(tmv_sub(origin, n->origin1)));
+	pr_debug("  ingress     : %" PRId64, tmv_to_nanoseconds(ingress));
+	pr_debug("  ingress1    : %" PRId64, tmv_to_nanoseconds(n->ingress1));
+	pr_debug("  ingress diff: %" PRId64, tmv_to_nanoseconds(tmv_sub(ingress, n->ingress1)));
+	pr_debug("  nrrSync     : %.12f", p->nrate_sync.ratio);
+	pr_debug("  nrrPdelay   : %.12f", p->nrate.ratio);
+	pr_debug(" ======================================================\n\n");
+
 	n->ingress1 = ingress;
 	n->origin1 = origin;
 	n->count = 0;
