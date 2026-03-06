@@ -352,6 +352,17 @@ struct follow_up_info_tlv {
 	Integer32     scaledLastGmPhaseChange;
 } PACKED;
 
+struct drift_tracking_tlv {
+       Enumeration16 type;
+       UInteger16    length;
+       Octet         id[3];
+       Octet         subtype[3];
+       struct ExtendedTimestamp syncEgressTimestamp;
+       struct ClockIdentity syncGrandmasterIdentity;
+       UInteger16    syncStepsRemoved;
+       Integer32     rateRatioDrift;
+} PACKED;
+
 struct ieee_c37_238_2011_tlv {
 	Enumeration16 type;
 	UInteger16    length;
@@ -402,6 +413,9 @@ struct time_status_np {
 	UInteger16    gmTimeBaseIndicator;
 	ScaledNs      lastGmPhaseChange;
 	Integer32     gmPresent;
+	struct ClockIdentity syncGrandmasterIdentity;
+	UInteger16    syncStepsRemoved;
+	Integer32     rateRatioDrift;
 	struct ClockIdentity gmIdentity;
 } PACKED;
 

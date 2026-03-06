@@ -168,6 +168,23 @@ static inline tmv_t timestamp_to_tmv(struct timestamp ts)
 	return t;
 }
 
+/* TODO: Revise this formula */
+static inline tmv_t extended_to_tmv(const struct ExtendedTimestamp *ext)
+{
+	// Combine seconds
+	uint64_t seconds = ((uint64_t)ext->seconds_msb << 32) | ext->seconds_lsb;
+
+	// Combine fractional nanoseconds (48 bits, split as msb/lsb)
+	// The fractionalNanoseconds field stores nanoseconds shifted left by 16 bits
+	// (same scaling as the PTP correctionField), so recover nanoseconds with >> 16.
+	uint64_t frac = ((uint64_t)ext->fractionalNanoseconds_msb << 32) |
+	                ext->fractionalNanoseconds_lsb;
+	uint64_t nanoseconds = frac >> 16;
+
+	// Compose tmv_t using nanoseconds_to_tmv
+	return tmv_add(nanoseconds_to_tmv(seconds * NS_PER_SEC), nanoseconds_to_tmv(nanoseconds));
+}
+
 static inline tmv_t pct_to_tmv(struct ptp_clock_time pct)
 {
 	tmv_t t;

@@ -113,6 +113,7 @@ struct clock {
 	int nports; /* does not include the two UDS ports */
 	int last_port_number;
 	int sde;
+	int drift_tracking;
 	int free_running;
 	int freq_est_interval;
 	int local_sync_uncertain;
@@ -559,6 +560,10 @@ static int clock_management_fill_response(struct clock *c, struct port *p,
 		else
 			tsn->gmPresent = 1;
 		tsn->gmIdentity = c->dad.pds.grandmasterIdentity;
+		// Q: Do we need this?
+		tsn->syncGrandmasterIdentity = c->status.syncGrandmasterIdentity;
+		tsn->syncStepsRemoved = c->status.syncStepsRemoved;
+		tsn->rateRatioDrift = c->status.rateRatioDrift;
 		datalen = sizeof(*tsn);
 		break;
 	case MID_GRANDMASTER_SETTINGS_NP:
@@ -1327,6 +1332,7 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	}
 
 	c->config = config;
+	c->drift_tracking = config_get_int(config, NULL, "drift_tracking");
 	c->free_running = config_get_int(config, NULL, "free_running");
 	c->freq_est_interval = config_get_int(config, NULL, "freq_est_interval");
 	c->local_sync_uncertain = SYNC_UNCERTAIN_DONTCARE;
@@ -1551,6 +1557,57 @@ void clock_follow_up_info(struct clock *c, struct follow_up_info_tlv *f)
 	c->status.gmTimeBaseIndicator = f->gmTimeBaseIndicator;
 	memcpy(&c->status.lastGmPhaseChange, &f->lastGmPhaseChange,
 	       sizeof(c->status.lastGmPhaseChange));
+}
+
+int clock_drift_tracking(struct clock *c)
+{
+	return c->drift_tracking ? 1 : 0;
+}
+
+void clock_drift_tracking_update(struct clock *c, struct drift_tracking_tlv *dt)
+{
+	if (!dt) {
+		pr_debug("Received msg does not contain drift_tracking TLV"); // Q: Do we need this debug log?
+		memset(&c->status.syncGrandmasterIdentity, 0xFF, sizeof(c->status.syncGrandmasterIdentity));
+		c->status.syncStepsRemoved = 0xFFFF;
+		c->status.rateRatioDrift = 0xFFFFFFFF;
+		goto debug; // TODO: Revert to return after development debug
+	}
+
+	memcpy(&c->status.syncGrandmasterIdentity, &dt->syncGrandmasterIdentity, sizeof(c->status.syncGrandmasterIdentity));
+	if (dt->syncStepsRemoved == 0xFFFF)
+		c->status.syncStepsRemoved = dt->syncStepsRemoved;
+	else
+		c->status.syncStepsRemoved = dt->syncStepsRemoved + 1;
+	c->status.rateRatioDrift = dt->rateRatioDrift;
+
+debug:
+	// TODO: Need to remove only for development debug purpose
+	struct ExtendedTimestamp a;
+	tmv_t b;
+
+	pr_debug(" ======================================================");
+	pr_debug("  Received drift_tracking TLV:");
+	pr_debug(" ======================================================");
+	if (dt) {
+		a.seconds_msb = dt->syncEgressTimestamp.seconds_msb;
+		a.seconds_lsb = dt->syncEgressTimestamp.seconds_lsb;
+		a.fractionalNanoseconds_msb = dt->syncEgressTimestamp.fractionalNanoseconds_msb;
+		a.fractionalNanoseconds_lsb = dt->syncEgressTimestamp.fractionalNanoseconds_lsb;
+		b = extended_to_tmv(&a);
+		pr_debug("  type: %u", dt->type);
+		pr_debug("  length: %u", dt->length);
+		pr_debug("  id: %02x%02x%02x", dt->id[0], dt->id[1], dt->id[2]);
+		pr_debug("  subtype: %u,%u,%u", dt->subtype[0], dt->subtype[1], dt->subtype[2]);
+		pr_debug("  syncEgressTimestamp: %" PRId64, tmv_to_nanoseconds(b));
+	}
+	pr_debug("  syncGrandmasterIdentity: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+			c->status.syncGrandmasterIdentity.id[0], c->status.syncGrandmasterIdentity.id[1],
+			c->status.syncGrandmasterIdentity.id[2], c->status.syncGrandmasterIdentity.id[3],
+			c->status.syncGrandmasterIdentity.id[4], c->status.syncGrandmasterIdentity.id[5],
+			c->status.syncGrandmasterIdentity.id[6], c->status.syncGrandmasterIdentity.id[7]);
+	pr_debug("  syncStepsRemoved: %u", c->status.syncStepsRemoved);
+	pr_debug("  rateRatioDrift: %d (%.9f)", c->status.rateRatioDrift, (double)c->status.rateRatioDrift / POW2_41);
 }
 
 int clock_free_running(struct clock *c)

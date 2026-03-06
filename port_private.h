@@ -92,10 +92,12 @@ struct port {
 		UInteger16 signaling;
 		UInteger16 sync;
 	} seqnum;
+	tmv_t syncIngressTimestamp; // TODO: Discuss whether we need this?
 	tmv_t peer_delay;
 	struct tsproc *tsproc;
 	int log_sync_interval;
 	struct nrate_estimator nrate;
+	struct nrate_estimator nrate_sync;
 	unsigned int pdr_missing;
 	unsigned int multiple_seq_pdr_count;
 	unsigned int multiple_pdr_detected;
@@ -107,6 +109,7 @@ struct port {
 	int inhibit_delay_req;
 	/* portDS */
 	struct PortIdentity portIdentity;
+	Enumeration8        nrrCompMethod;
 	enum port_state     state; /*portState*/
 	Integer64           asymmetry;
 	enum as_capable     asCapable;
@@ -127,6 +130,7 @@ struct port {
 	Integer8            operLogPdelayReqInterval;
 	Integer8            logPdelayReqInterval;
 	UInteger32          neighborPropDelayThresh;
+	// int                 drift_tracking;
 	int                 follow_up_info;
 	int                 freq_est_interval;
 	int                 hybrid_e2e;

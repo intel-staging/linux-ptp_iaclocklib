@@ -151,6 +151,20 @@ struct port *clock_first_port(struct clock *c);
 void clock_follow_up_info(struct clock *c, struct follow_up_info_tlv *f);
 
 /**
+ * Determine if a clock support drift tracking.
+ * @param c  The clock instance.
+ * @return   One if the clock support drift tracking or zero otherwise.
+ */
+int clock_drift_tracking(struct clock *c);
+
+/**
+ * Update the drift tracking information of a clock.
+ * @param c  The clock instance.
+ * @param dt Pointer to the drift tracking TLV.
+ */
+void clock_drift_tracking_update(struct clock *c, struct drift_tracking_tlv *dt);
+
+/**
  * Determine if a clock is free running or not.
  * @param c  The clock instance.
  * @return   One if the clock is free running or zero otherwise.
