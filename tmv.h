@@ -168,6 +168,14 @@ static inline tmv_t timestamp_to_tmv(struct timestamp ts)
 	return t;
 }
 
+static inline tmv_t extended_to_tmv(const struct ExtendedTimestamp *ext)
+{
+	uint64_t sec = ((uint64_t)ext->seconds_msb << 32) | ext->seconds_lsb;
+	uint64_t nsec = (((uint64_t)ext->fractionalNanoseconds_msb << 32) |
+					ext->fractionalNanoseconds_lsb) >> 16;
+	return tmv_add(nanoseconds_to_tmv(sec * NS_PER_SEC), nanoseconds_to_tmv(nsec));
+}
+
 static inline tmv_t pct_to_tmv(struct ptp_clock_time pct)
 {
 	tmv_t t;

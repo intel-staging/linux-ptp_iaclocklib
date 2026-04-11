@@ -222,6 +222,13 @@ static struct config_enum nw_trans_enu[] = {
 	{ NULL, 0 },
 };
 
+//TODO: Change to accomodate Enumeration1
+static struct config_enum nrr_comp_enu[] = {
+	{ "SYNC", SYNC },
+	{ "PDELAY", PDELAY_RESP },
+	{ NULL, 0 },
+};
+
 static struct config_enum timestamping_enu[] = {
 	{ "hardware", TS_HARDWARE  },
 	{ "software", TS_SOFTWARE  },
@@ -280,6 +287,7 @@ struct config_item config_tab[] = {
 	PORT_ITEM_DBL("delay_request_variability", 1.0, 0.0, 1.0),
 	PORT_ITEM_ENU("delay_mechanism", DM_E2E, delay_mech_enu),
 	PORT_ITEM_INT("delay_response_timeout", 0, 0, UINT8_MAX),
+	GLOB_ITEM_INT("drift_tracking", 0, 0, 1),
 	GLOB_ITEM_INT("dscp_event", 0, 0, 63),
 	GLOB_ITEM_INT("dscp_general", 0, 0, 63),
 	GLOB_ITEM_INT("domainNumber", 0, 0, 255),
@@ -320,6 +328,7 @@ struct config_item config_tab[] = {
 	PORT_ITEM_INT("neighborPropDelayThresh", 20000000, 0, INT_MAX),
 	PORT_ITEM_INT("net_sync_monitor", 0, 0, 1),
 	PORT_ITEM_ENU("network_transport", TRANS_UDP_IPV4, nw_trans_enu),
+	PORT_ITEM_ENU("nrrCompMethod", PDELAY_RESP, nrr_comp_enu),
 	GLOB_ITEM_INT("ntpshm_segment", 0, INT_MIN, INT_MAX),
 	GLOB_ITEM_INT("offsetScaledLogVariance", 0xffff, 0, UINT16_MAX),
 	PORT_ITEM_INT("operLogPdelayReqInterval", 0, INT8_MIN, INT8_MAX),

@@ -62,6 +62,17 @@ static int port_is_uds(struct port *p);
 static int port_has_security(struct port *p);
 static void port_nrate_initialize(struct port *p);
 
+
+static void Timestamp_to_extended(const struct Timestamp *src, struct ExtendedTimestamp *dst)
+{
+	dst->seconds_msb = src->seconds_msb;
+	dst->seconds_lsb = src->seconds_lsb;
+
+	uint64_t frac = (uint64_t)src->nanoseconds << 16;
+	dst->fractionalNanoseconds_msb = (frac >> 32) & 0xFFFF;
+	dst->fractionalNanoseconds_lsb = frac & 0xFFFFFFFF;
+}
+
 static int announce_compare(struct ptp_message *m1, struct ptp_message *m2)
 {
 	struct announce_msg *a = &m1->announce, *b = &m2->announce;
@@ -453,6 +464,55 @@ static int follow_up_info_append(struct ptp_message *m)
 	return 0;
 }
 
+static int drift_tracking_append(struct port *p, struct ptp_message *m)
+{
+	struct drift_tracking_tlv *dt;
+	struct tlv_extra *extra;
+
+	extra = msg_tlv_append(m, sizeof(*dt));
+	if (!extra) {
+		return -1;
+	}
+	dt = (struct drift_tracking_tlv *) extra->tlv;
+	dt->type = TLV_ORGANIZATION_EXTENSION;
+	dt->length = sizeof(*dt) - sizeof(dt->type) - sizeof(dt->length);
+	memcpy(dt->id, ieee8021_id, sizeof(ieee8021_id));
+	dt->subtype[2] = 6;
+	memcpy(dt->syncGrandmasterIdentity.id,
+		clock_parent_ds(p->clock)->pds.grandmasterIdentity.id,
+		sizeof(dt->syncGrandmasterIdentity.id));
+	dt->syncStepsRemoved = 0;
+	Timestamp_to_extended(&m->follow_up.preciseOriginTimestamp,
+		&dt->syncEgressTimestamp);
+	dt->rateRatioDrift = 0;
+
+	// TODO: Need to remove only for development debug purpose
+	struct ExtendedTimestamp a;
+	tmv_t b;
+
+	a.seconds_msb = dt->syncEgressTimestamp.seconds_msb;
+	a.seconds_lsb = dt->syncEgressTimestamp.seconds_lsb;
+	a.fractionalNanoseconds_msb = dt->syncEgressTimestamp.fractionalNanoseconds_msb;
+	a.fractionalNanoseconds_lsb = dt->syncEgressTimestamp.fractionalNanoseconds_lsb;
+	b = extended_to_tmv(&a);
+	pr_debug(" ======================================================");
+	pr_debug("  %s Transmit drift_tracking TLV:", p->log_name);
+	pr_debug(" ======================================================");
+	pr_debug("  length: %u", dt->length);
+	pr_debug("  id: %02x%02x%02x", dt->id[0], dt->id[1], dt->id[2]);
+	pr_debug("  subtype: %u,%u,%u", dt->subtype[0], dt->subtype[1], dt->subtype[2]);
+	pr_debug("  syncEgressTimestamp: %" PRId64, tmv_to_nanoseconds(b));
+	pr_debug("  syncGrandmasterIdentity: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+		dt->syncGrandmasterIdentity.id[0], dt->syncGrandmasterIdentity.id[1],
+		dt->syncGrandmasterIdentity.id[2], dt->syncGrandmasterIdentity.id[3],
+		dt->syncGrandmasterIdentity.id[4], dt->syncGrandmasterIdentity.id[5],
+		dt->syncGrandmasterIdentity.id[6], dt->syncGrandmasterIdentity.id[7]);
+	pr_debug("  syncStepsRemoved: %u", dt->syncStepsRemoved);
+	pr_debug("  rateRatioDrift: %d (%.9f)", dt->rateRatioDrift, (double)dt->rateRatioDrift / POW2_41);
+
+	return 0;
+}
+
 static int ieee_c37_238_append(struct port *p, struct ptp_message *m)
 {
 	struct ieee_c37_238_2017_tlv *p17;
@@ -569,6 +629,22 @@ static struct follow_up_info_tlv *follow_up_info_extract(struct ptp_message *m)
 //		    memcmp(f->id, ieee8021_id, sizeof(ieee8021_id)) &&
 		    !f->subtype[0] && !f->subtype[1] && f->subtype[2] == 1) {
 			return f;
+		}
+	}
+	return NULL;
+}
+
+static struct drift_tracking_tlv *drift_tracking_extract(struct ptp_message *m)
+{
+	struct drift_tracking_tlv *dt;
+	struct tlv_extra *extra;
+
+	TAILQ_FOREACH(extra, &m->tlv_list, list) {
+		dt = (struct drift_tracking_tlv *) extra->tlv;
+		if (dt->type == TLV_ORGANIZATION_EXTENSION &&
+		    dt->length == sizeof(*dt) - sizeof(dt->type) - sizeof(dt->length) &&
+		    !dt->subtype[0] && !dt->subtype[1] && dt->subtype[2] == 6) {
+			return dt;
 		}
 	}
 	return NULL;
@@ -1312,6 +1388,72 @@ static void port_nrate_calculate(struct port *p, tmv_t origin, tmv_t ingress)
 	n->ratio_valid = 1;
 }
 
+// TODO: Revise might need to add CMLDS delayAsymmetry compensation to the calculation
+void port_nrate_sync_calculate(struct port *p, tmv_t origin, tmv_t ingress)
+{
+	struct nrate_estimator *n = &p->nrate_sync;
+
+	if (tmv_is_zero(n->ingress1)) {
+		n->ingress1 = ingress;
+		n->origin1 = origin;
+		return;
+	}
+	// TODO: This need to be tune as too freq might cause too much noise
+	// pr_debug(" max_count: %u, count: %u", n->max_count, n->count);
+	n->count++;
+	// if (n->count < n->max_count) {
+	//      return;
+	// }
+	if (tmv_cmp(ingress, n->ingress1) == 0) {
+		pr_warning("bad timestamps in nrate sync calculation");
+		return;
+	}
+
+	n->ratio =
+		tmv_dbl(tmv_sub(origin, n->origin1)) /
+		tmv_dbl(tmv_sub(ingress, n->ingress1));
+
+	// TODO: Need to remove only for development debug purpose
+	pr_debug(" ======================================================");
+	pr_debug("  %s: Additional debug info - nrrSync", p->log_name);
+	pr_debug(" ======================================================");
+	pr_debug("  origin      : %" PRId64, tmv_to_nanoseconds(origin));
+	pr_debug("  origin1     : %" PRId64, tmv_to_nanoseconds(n->origin1));
+	pr_debug("  origin diff : %" PRId64, tmv_to_nanoseconds(tmv_sub(origin, n->origin1)));
+	pr_debug("  ingress     : %" PRId64, tmv_to_nanoseconds(ingress));
+	pr_debug("  ingress1    : %" PRId64, tmv_to_nanoseconds(n->ingress1));
+	pr_debug("  ingress diff: %" PRId64, tmv_to_nanoseconds(tmv_sub(ingress, n->ingress1)));
+	pr_debug("  nrrSync     : %.12f", p->nrate_sync.ratio);
+	pr_debug("  nrrPdelay   : %.12f", p->nrate.ratio);
+	pr_debug(" ======================================================\n\n");
+
+	n->ingress1 = ingress;
+	n->origin1 = origin;
+	n->count = 0;
+	n->ratio_valid = 1;
+}
+
+// TODO: check what should assign for shift and max_count
+static void port_nrate_sync_intialize(struct port *p)
+{
+	int shift = p->freq_est_interval - p->logSyncInterval;
+
+	if (shift < 0)
+		shift = 0;
+	else if (shift >= sizeof(int) * 8) {
+		shift = sizeof(int) * 8 - 1;
+		pr_warning("freq_est_interval is too long");
+	}
+
+	/* Initialize nrate_sync */
+	p->nrate_sync.origin1 = tmv_zero();
+	p->nrate_sync.ingress1 = tmv_zero();
+	p->nrate_sync.max_count = (1U << shift);
+	p->nrate_sync.count = 0;
+	p->nrate_sync.ratio = 1.0;
+	p->nrate_sync.ratio_valid = 0;
+}
+
 static void port_nrate_initialize(struct port *p)
 {
 	int shift = p->freq_est_interval - p->logPdelayReqInterval;
@@ -1328,12 +1470,15 @@ static void port_nrate_initialize(struct port *p)
 
 	p->peer_portid_valid = 0;
 
+	/* Initialize nrate */
 	p->nrate.origin1 = tmv_zero();
 	p->nrate.ingress1 = tmv_zero();
 	p->nrate.max_count = (1U << shift);
 	p->nrate.count = 0;
 	p->nrate.ratio = 1.0;
 	p->nrate.ratio_valid = 0;
+
+	port_nrate_sync_intialize(p);
 }
 
 int port_set_announce_tmo(struct port *p)
@@ -1919,6 +2064,12 @@ int port_tx_sync(struct port *p, struct address *dst, uint16_t sequence_id)
 		err = -1;
 		goto out;
 	}
+	if (clock_drift_tracking(p->clock) &&
+		drift_tracking_append(p, fup)) {
+		pr_err("%s: append drift tracking failed", p->log_name);
+		err = -1;
+		goto out;
+	}
 
 	err = port_prepare_and_send(p, fup, TRANS_GENERAL);
 	if (err) {
@@ -2090,6 +2241,7 @@ int port_initialize(struct port *p)
 	p->logPdelayReqInterval    = p->logMinPdelayReqInterval;
 	p->operLogPdelayReqInterval = config_get_int(cfg, p->name, "operLogPdelayReqInterval");
 	p->neighborPropDelayThresh = config_get_int(cfg, p->name, "neighborPropDelayThresh");
+	p->nrrCompMethod = config_get_int(cfg, p->name, "nrrCompMethod");
 	p->min_neighbor_prop_delay = config_get_int(cfg, p->name, "min_neighbor_prop_delay");
 	p->delay_request_variability = config_get_double(cfg, p->name, "delay_request_variability");
 	p->delay_response_timeout  = config_get_int(cfg, p->name, "delay_response_timeout");
@@ -2480,6 +2632,19 @@ void process_follow_up(struct port *p, struct ptp_message *m)
 		clock_follow_up_info(p->clock, fui);
 	}
 
+	if (clock_drift_tracking(p->clock)) {
+		struct drift_tracking_tlv *dt = drift_tracking_extract(m);
+		clock_drift_tracking_update(p->clock, dt);
+		/* Calculate nrrSync */
+		tmv_t t1, t1c;
+		t1 = extended_to_tmv(&dt->syncEgressTimestamp);
+		t1c = tmv_add(t1, correction_to_tmv(p->asymmetry)); // Q: do we need to add asymmetry/correction?
+		pr_debug("%s: t1=%" PRId64 ", asymmetry=%" PRId64 ", t1c=%" PRId64, p->log_name,
+				tmv_to_nanoseconds(t1), tmv_to_nanoseconds(correction_to_tmv(p->asymmetry)), tmv_to_nanoseconds(t1c));
+		if (dt && p->nrrCompMethod == SYNC) // Q: if no dt tlv do we still calculate nrrSync?
+			port_nrate_sync_calculate(p, t1c, p->syncIngressTimestamp);
+	}
+
 	if (p->syfu == SF_HAVE_SYNC &&
 	    p->last_syncfup->header.sequenceId == m->header.sequenceId) {
 		event = FUP_MATCH;
@@ -2682,11 +2847,14 @@ calc:
 		t3c = tmv_add(t3, tmv_add(c1, c2));
 	}
 
+	/* Calculate nrrPdelay */
 	if (p->follow_up_info)
 		port_nrate_calculate(p, t3c, t4);
 
-	tsproc_set_clock_rate_ratio(p->tsproc, p->nrate.ratio *
-				    clock_rate_ratio(p->clock));
+	double nrr = (p->nrrCompMethod == SYNC && clock_drift_tracking(p->clock)) ?
+		p->nrate_sync.ratio : p->nrate.ratio;
+
+	tsproc_set_clock_rate_ratio(p->tsproc, nrr * clock_rate_ratio(p->clock));
 	tsproc_up_ts(p->tsproc, t1, t2);
 	tsproc_down_ts(p->tsproc, t3c, t4);
 	if (tsproc_update_delay(p->tsproc, &p->peer_delay))
@@ -2695,8 +2863,7 @@ calc:
 	p->peerMeanPathDelay = tmv_to_TimeInterval(p->peer_delay);
 
 	if (p->state == PS_UNCALIBRATED || p->state == PS_SLAVE) {
-		clock_peer_delay(p->clock, p->peer_delay, t1, t2,
-				 p->nrate.ratio);
+		clock_peer_delay(p->clock, p->peer_delay, t1, t2, nrr);
 	}
 
 	msg_put(p->peer_delay_req);
@@ -3282,6 +3449,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 	}
 	if (msg_sots_valid(msg)) {
 		ts_add(&msg->hwts.ts, -p->rx_timestamp_offset);
+		p->syncIngressTimestamp = msg->hwts.ts;
 		if (p->state == PS_SLAVE) {
 			clock_check_ts(p->clock,
 				       tmv_to_nanoseconds(msg->hwts.ts));
