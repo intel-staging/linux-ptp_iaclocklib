@@ -158,6 +158,11 @@ reset.
 The default is 3.
 
 .TP
+.B allowedDriftTrackingTlvLost
+The number of missed drift_tracking TLV before the nrr fallback to nrrPdelay.
+The default is 8.
+
+.TP
 .B announceReceiptTimeout
 The number of missed Announce messages before the last Announce messages
 expires.
@@ -247,6 +252,12 @@ The number of delay response messages that may go missing before
 triggering a synchronization fault. Setting this option to zero will
 disable the delay response timeout.
 The default is 0 or disabled.
+
+
+.TP
+.B drift_tracking
+Include the 802.1ASdm drift_tracking data in the Follow_Up messages if enabled.
+The default is 0 (disabled).
 
 .TP
 .B egressLatency
@@ -371,6 +382,12 @@ smaller than this value the port is marked as not 802.1AS capable.
 .B neighborPropDelayThresh
 Upper limit for peer delay in nanoseconds. If the estimated peer delay is
 greater than this value the port is marked as not 802.1AS capable.
+
+.TP
+.B nrrCompMethod
+Select the method used to compute the neighborRateRatio. Relevant only when
+drift_tracking is enabled. Possible values are nrrPdelay, nrrSync.
+The default is nrrPdelay.
 
 .TP
 .B network_transport
