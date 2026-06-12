@@ -172,6 +172,19 @@ void clock_update_drift_tracking(struct clock *c, struct drift_tracking_tlv *dt)
 struct drift_tracking_np *clock_drift_tracking_data(struct clock *c);
 
 /**
+ * Calculate the clock's estimated rate ratio drift.
+ * @param c  The clock instance.
+ */
+void clock_rate_ratio_drift_calculate(struct clock *c, double rateRatio);
+
+/**
+ * Obtain the clock's estimated rate ratio drift.
+ * @param c  The clock instance.
+ * @return   The estimated rate ratio drift of the clock.
+ */
+double clock_rate_ratio_drift(struct clock *c);
+
+/**
  * Determine if a clock is free running or not.
  * @param c  The clock instance.
  * @return   One if the clock is free running or zero otherwise.
