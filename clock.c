@@ -65,6 +65,13 @@ struct freq_estimator {
 	unsigned int count;
 };
 
+struct rate_ratio_drift_estimator {
+	double ratio;
+	tmv_t origin1;
+	double rateRatio1;
+	int ratio_valid;
+};
+
 struct clock_stats {
 	struct stats *offset;
 	struct stats *freq;
@@ -137,6 +144,7 @@ struct clock {
 	struct freq_estimator fest;
 	struct time_status_np status;
 	struct drift_tracking_np dtdata;
+	struct rate_ratio_drift_estimator rrdest;
 	double master_local_rr; /* maintained when free_running */
 	double nrr;
 	struct clock_description desc;
@@ -1334,6 +1342,10 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 		memset(&c->dtdata.syncEgressTimestamp, 0, sizeof(c->dtdata.syncEgressTimestamp));
 		c->dtdata.syncStepsRemoved = 0;
 		c->dtdata.rateRatioDrift = 0;
+
+		c->rrdest.ratio_valid = 0;
+		c->rrdest.ratio = 1.0;
+		c->rrdest.origin1 = tmv_zero();
 	}
 
 	c->config = config;
@@ -1572,6 +1584,9 @@ void clock_update_drift_tracking(struct clock *c, struct drift_tracking_tlv *dt)
 {
 	if (!dt) {
 		pl_debug(10, "Received msg does not contain drift_tracking TLV");
+
+		c->rrdest.ratio_valid = 0;
+		c->rrdest.origin1 = tmv_zero();
 
 		memset(&c->dtdata.syncGrandmasterIdentity, 0xFF, sizeof(c->dtdata.syncGrandmasterIdentity));
 		memset(&c->dtdata.syncEgressTimestamp, 0, sizeof(c->dtdata.syncEgressTimestamp));
@@ -2091,6 +2106,35 @@ static void clock_step_window(struct clock *c)
 		return;
 	}
 	c->step_window_counter = c->step_window;
+}
+
+double clock_rate_ratio_drift(struct clock *c)
+{
+	return c->rrdest.ratio;
+}
+
+void clock_rate_ratio_drift_calculate(struct clock *c, double rateRatio)
+{
+	struct rate_ratio_drift_estimator *rrd = &c->rrdest;
+	tmv_t origin = extended_to_tmv(&c->dtdata.syncEgressTimestamp);
+
+	if (tmv_is_zero(rrd->origin1)) {
+		rrd->origin1 = origin;
+		rrd->rateRatio1 = rateRatio;
+		return;
+	}
+
+	if (tmv_cmp(origin, rrd->origin1) == 0) {
+		pr_warning("bad timestamps in rateRatioDrift calculation");
+		return;
+	}
+
+	rrd->ratio = ((rateRatio - rrd->rateRatio1) /
+				 tmv_dbl(tmv_sub(origin, rrd->origin1))) *
+				 NS_PER_SEC * POW2_41;
+	rrd->origin1 = origin;
+	rrd->rateRatio1 = rateRatio;
+	rrd->ratio_valid = 1;
 }
 
 static int clock_synchronize_locked(struct clock *c, double adj)
